@@ -1,0 +1,2 @@
+resolver ${NGINX_RESOLVER_ADDRESS} valid=300s ipv6=off;
+resolver_timeout 10s;

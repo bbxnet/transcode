@@ -1,0 +1,28 @@
+#!/bin/bash
+
+set -o errexit
+set -o nounset
+
+function generate_iv() {
+    openssl rand -hex 16
+}
+
+function generate_key() {
+    local filename="$1"; shift
+
+    openssl rand 16 > "${filename}"
+}
+
+function generate_keyinfo() {
+    local id="$1"; shift
+    local uuid="$( openssl rand -hex 8 )"
+
+    mkdir -p "${TRANSCODE_STREAM_PATH}/${id}"
+    generate_key "${TRANSCODE_STREAM_PATH}/${id}/${uuid}.key"
+
+    echo "${uuid}.key" > "${TRANSCODE_INSTANCED_PATH}/${id}/keyinfo"
+    echo "${uuid}.key" >> "${TRANSCODE_INSTANCED_PATH}/${id}/keyinfo"
+    echo "$( generate_iv )" >> "${TRANSCODE_INSTANCED_PATH}/${id}/keyinfo"
+}
+
+generate_keyinfo "$@"

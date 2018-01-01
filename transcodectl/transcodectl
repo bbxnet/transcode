@@ -1,0 +1,302 @@
+#!/bin/bash
+
+set -o errexit
+set -o nounset
+
+export TRANSCODE_CONF_PATH=/etc/transcode
+export TRANSCODE_INSTANCED_PATH="${TRANSCODE_CONF_PATH}/instance.d"
+export TRANSCODE_RUN_PATH="${TRANSCODE_CONF_PATH}/run.d"
+export TRANSCODE_STREAM_PATH=/srv/stream
+export TRANSCODE_TEMPLATE_PATH="${TRANSCODE_CONF_PATH}/template"
+
+if [ -f "${TRANSCODE_CONF_PATH}/transcodectl.conf" ]; then
+    source "${TRANSCODE_CONF_PATH}/transcodectl.conf"
+fi
+
+export TRANSCODE_DOCKER_IMAGE="${TRANSCODE_DOCKER_IMAGE:-bbxnet/transcode-ffmpeg}"
+export TRANSCODE_MASTER_PLAYLIST="${TRANSCODE_MASTER_PLAYLIST:-${TRANSCODE_STREAM_PATH}/playlist.m3u}"
+
+function __gpu_autoselect() {
+    local gpu
+    local gpu_list; gpu_list="${TRANSCODECTL_GPU_LIST:-$( seq 0 $(( $( __gpu_count ) - 1 )) )}"
+    for gpu in ${gpu_list}; do
+        if [ "$( __gpu_get_memory_free "${gpu}" )" -lt "${TRANSCODECTL_GPU_MEMORY_REQUIREMENT}" ]; then
+            continue
+        fi
+
+        if [ "$( __gpu_get_decoder_utilization "${gpu}" )" -gt "${TRANSCODECTL_GPU_UTILIZATION_LIMIT}" ]; then
+            continue
+        fi
+
+        if [ "$( __gpu_get_encoder_utilization "${gpu}" )" -gt "${TRANSCODECTL_GPU_UTILIZATION_LIMIT}" ]; then
+            continue
+        fi
+
+        echo "${gpu}"
+        return
+    done
+
+    exit 1
+}
+
+function __gpu_count() {
+    nvidia-smi -L | wc -l
+}
+
+function __gpu_get_channel_count() {
+    local gpu="$1"; shift
+    [ "${gpu}" -lt "$( __gpu_count )" ] || exit 1
+
+    __gpu_get_channel_list "${gpu}" | wc -l
+}
+
+function __gpu_get_channel_list() {
+    local gpu="$1"; shift
+    [ "${gpu}" -lt "$( __gpu_count )" ] || exit 1
+
+    cat "${TRANSCODE_RUN_PATH}/gpu/${gpu}/channels"
+}
+
+function __gpu_get_decoder_utilization() {
+    local gpu="$1"; shift
+    [ "${gpu}" -lt "$( __gpu_count )" ] || exit 1
+    local utilization=0
+
+    local i u
+    for i in $( seq 0 4 ); do
+        u=$( nvidia-smi dmon -c 1 -i "${gpu}" -s u | tail -n 1 | tr -s ' ' | cut -d' ' -f 6 )
+
+        if [ "${u}" -gt "${utilization}" ]; then
+            utilization="${u}"
+        fi
+
+        sleep 1
+    done
+
+    echo "${utilization}"
+}
+
+function __gpu_get_encoder_utilization() {
+    local gpu="$1"; shift
+    [ "${gpu}" -lt "$( __gpu_count )" ] || exit 1
+    local utilization=0
+
+    local i u
+    for i in $( seq 0 4 ); do
+        u=$( nvidia-smi dmon -c 1 -i "${gpu}" -s u | tail -n 1 | tr -s ' ' | cut -d' ' -f 5 )
+
+        if [ "${u}" -gt "${utilization}" ]; then
+            utilization="${u}"
+        fi
+
+        sleep 1
+    done
+
+    echo "${utilization}"
+}
+
+function __gpu_get_memory_free() {
+    local gpu="$1"; shift
+    [ "${gpu}" -lt "$( __gpu_count )" ] || exit 1
+
+    nvidia-smi -i "${gpu}" --query-gpu=memory.free --format=csv,noheader,nounits
+}
+
+function __gpu_get_memory_total() {
+    local gpu="$1"; shift
+    [ "${gpu}" -lt "$( __gpu_count )" ] || exit 1
+
+    nvidia-smi -i "${gpu}" --query-gpu=memory.total --format=csv,noheader,nounits
+}
+
+function __gpu_get_memory_used() {
+    local gpu="$1"; shift
+    [ "${gpu}" -lt "$( __gpu_count )" ] || exit 1
+
+    nvidia-smi -i "${gpu}" --query-gpu=memory.used --format=csv,noheader,nounits
+}
+
+function __lock() {
+    local id="$1"; shift
+    mkdir -p "${TRANSCODE_RUN_PATH}"
+    mkdir "${TRANSCODE_RUN_PATH}/${id}"
+}
+
+function __unlock() {
+    local id="$1"; shift
+    rmdir "${TRANSCODE_RUN_PATH}/${id}"
+}
+
+function _build() {
+    local id="$1"; shift
+
+    _update "${id}" "$@"
+    _rekey "${id}" "$@"
+}
+
+function _configure() {
+    local id="$1"; shift
+    local template="$1"; shift
+
+    mkdir -p "${TRANSCODE_INSTANCED_PATH}/${id}"
+    cp --preserve --recursive "${TRANSCODE_TEMPLATE_PATH}/${template}"/* "${TRANSCODE_INSTANCED_PATH}/${id}"
+
+    "${TRANSCODE_INSTANCED_PATH}/${id}/configure" "${id}" "$@"
+}
+
+function _generate_playlist() {
+    echo "#EXTM3U" > "${TRANSCODE_MASTER_PLAYLIST}"
+
+    for id in $( ls -A "${TRANSCODE_INSTANCED_PATH}" ); do
+        echo "#EXTINF:0,$( cat "${TRANSCODE_INSTANCED_PATH}/${id}/service_name" )" >> "${TRANSCODE_MASTER_PLAYLIST}"
+        echo "${TRANSCODE_URL_BASE:-}/${id}/playlist.m3u8" >> "${TRANSCODE_MASTER_PLAYLIST}"
+    done
+}
+
+function _initialize() {
+    local id="$1"; shift
+
+    if ! __lock initialize; then
+        exit 1
+    fi
+
+    __gpu_autoselect > "${TRANSCODE_INSTANCED_PATH}/${id}/gpu.lock"
+
+    docker run \
+        --detach \
+        --name="transcode-${id}" \
+        --net=host \
+        --restart=unless-stopped \
+        --runtime nvidia \
+        --volume /sys/fs/cgroup:/sys/fs/cgroup:ro \
+        --volume "${TRANSCODE_INSTANCED_PATH}/${id}:/etc/transcode:Z" \
+        --volume "${TRANSCODE_STREAM_PATH}/${id}:/srv/stream:Z" \
+        "${TRANSCODE_DOCKER_IMAGE}"
+
+    __unlock initialize
+}
+
+function _rekey() {
+    local id="$1"; shift
+
+    if [ -f "${TRANSCODE_INSTANCED_PATH}/${id}/rekey" ]; then
+        "${TRANSCODE_INSTANCED_PATH}/${id}/rekey" "${id}" "$@"
+    fi
+}
+
+function _rekey_all() {
+    for id in $( ls -A "${TRANSCODE_INSTANCED_PATH}" ); do
+        _rekey "${id}"
+    done
+}
+
+function _remove() {
+    local id="$1"; shift
+
+    rm --recursive "${TRANSCODE_INSTANCED_PATH}/${id}"
+}
+
+function _remove_all() {
+    for id in $( ls -A "${TRANSCODE_INSTANCED_PATH}" ); do
+        _remove "${id}"
+    done
+}
+
+function _restart() {
+    local id="$1"; shift
+
+    docker restart "transcode-${id}"
+}
+
+function _restart_all() {
+    for id in $( ls -A "${TRANSCODE_INSTANCED_PATH}" ); do
+        _restart "${id}"
+    done
+}
+
+function _start() {
+    local id="$1"; shift
+
+    mkdir -p "${TRANSCODE_INSTANCED_PATH}/${id}"
+    mkdir -p "${TRANSCODE_STREAM_PATH}/${id}"
+
+    if docker ps -a | grep -q "transcode-${id}"; then
+        docker start "transcode-${id}"
+    else
+        _initialize "${id}"
+    fi
+}
+
+function _start_all() {
+    for id in $( ls -A "${TRANSCODE_INSTANCED_PATH}" ); do
+        _start "${id}"
+    done
+}
+
+function _stop() {
+    local id="$1"; shift
+
+    docker stop "transcode-${id}"
+}
+
+function _stop_all() {
+    for id in $( ls -A "${TRANSCODE_INSTANCED_PATH}" ); do
+        _stop "${id}"
+    done
+}
+
+function _update() {
+    local id="$1";shift
+
+    "${TRANSCODE_INSTANCED_PATH}/${id}/build" "${id}" "$@"
+}
+
+function transcodectl() {
+    local action="$1"; shift
+
+    case ${action} in
+        build)
+            _build "$@" ;;
+
+        configure)
+            _configure "$@" ;;
+
+        generate-playlist)
+            _generate_playlist ;;
+
+        rekey)
+            _rekey "$@" ;;
+
+        rekey-all)
+            _rekey_all ;;
+
+        restart)
+            _restart "$@" ;;
+
+        restart-all)
+            _restart_all ;;
+
+        remove)
+            _remove "$@" ;;
+
+        remove-all)
+            _remove_all ;;
+
+        start)
+            _start "$@" ;;
+
+        start-all)
+            _start_all ;;
+
+        stop)
+            _stop "$@" ;;
+
+        stop-all)
+            _stop_all ;;
+
+        update)
+            _update "$@" ;;
+    esac
+}
+
+transcodectl "$@"

@@ -1,0 +1,26 @@
+function _list_channels() {
+    ls -A1 "/etc/transcode/instance.d/"
+}
+
+function _transcodectl() {
+    COMPREPLY=()
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    local prev="${COMP_WORDS[COMP_CWORD-1]}"
+
+    local actions="build configure generate-playlist rekey rekey-all restart restart-all remove remove-all start start-all stop stop-all update"
+
+    case "${prev}" in
+        rekey|restart|remove|start|stop|update)
+            local channels=$( _list_channels )
+	        COMPREPLY=( $(compgen -W "${channels}" -- ${cur}) )
+            return 0
+            ;;
+        *)
+            ;;
+    esac
+
+   COMPREPLY=($(compgen -W "${actions}" -- ${cur}))
+   return 0
+}
+
+complete -F _transcodectl transcodectl

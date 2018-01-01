@@ -1,0 +1,12 @@
+#!/bin/bash
+
+source "${CONTAINER_ENTRYPOINT_PATH}/libce.sh"
+source "${CONTAINER_ENTRYPOINT_PATH}/transcode/libtranscode.sh"
+
+set -o errexit
+set -o nounset
+shopt -s nullglob
+
+ce_source_hooks "${CONTAINER_ENTRYPOINT_PATH}/transcode/pre-init.d"
+
+exec xargs <<<$( transcode_cmd ) ffmpeg
