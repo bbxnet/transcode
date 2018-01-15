@@ -1,0 +1,41 @@
+#!/bin/bash
+
+function _automap_audio_stream() {
+    local input="$1"; shift
+    local audio_streams; audio_streams=$( _automap_list_audio_streams "${input}" )
+
+    for lang in ${AUTOMAP_PREFERRED_LANGUAGES}; do
+        _automap_match_audio_stream "${lang}" "${audio_streams[@]}" && return
+    done
+
+    echo -map 0:a:0?
+}
+
+function _automap_list_audio_streams() {
+    local input="$1"; shift
+
+    timeout 60 ffprobe \
+        -v quiet \
+        -select_streams a \
+        -show_entries program_stream=bit_rate,codec_name,id:program_stream_tags=language \
+        -of csv=item_sep=';':print_section=0 \
+        "${input}" || true
+}
+
+function _automap_match_audio_stream() {
+    local cond="$1"; shift
+
+    local bitrate codec lang pid
+    for stream in $@; do
+        IFS=";" read codec pid bitrate lang <<< "${stream}"
+
+        if [ "${lang}" == "${cond}" ]; then
+            echo -map "i:${pid}"
+	    return
+        fi
+    done
+
+    return 1
+}
+
+_automap_audio_stream "${AUTOMAP_INPUT}"

@@ -8,4 +8,9 @@ install:
 	install --group=0 --mode=0755 --owner=0 template/udp-to-hls/configure /etc/transcode/template/udp-to-hls/configure
 	install --group=0 --mode=0644 --owner=0 template/udp-to-hls/output.automap.template /etc/transcode/template/udp-to-hls/output.automap.template
 	install --group=0 --mode=0755 --owner=0 template/udp-to-hls/rekey /etc/transcode/template/udp-to-hls/rekey
+	install --directory --group=0 --mode=0755 --owner=0 /etc/transcode/template/udp-audio-to-hls
+	install --group=0 --mode=0755 --owner=0 template/udp-audio-to-hls/build /etc/transcode/template/udp-audio-to-hls/build
+	install --group=0 --mode=0755 --owner=0 template/udp-audio-to-hls/configure /etc/transcode/template/udp-audio-to-hls/configure
+	install --group=0 --mode=0644 --owner=0 template/udp-audio-to-hls/output.automap.template /etc/transcode/template/udp-audio-to-hls/output.automap.template
+	install --group=0 --mode=0755 --owner=0 template/udp-audio-to-hls/rekey /etc/transcode/template/udp-audio-to-hls/rekey
 	install --group=0 --mode=0755 --owner=0 transcodectl /usr/bin/transcodectl

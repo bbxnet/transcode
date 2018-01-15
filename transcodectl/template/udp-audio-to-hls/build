@@ -1,0 +1,128 @@
+#!/bin/bash
+
+set -o errexit
+set -o nounset
+
+_id="$1"
+
+if [ -f "${TRANSCODE_INSTANCED_PATH}/${_id}/build.env" ]; then
+    source "${TRANSCODE_INSTANCED_PATH}/${_id}/build.env"
+fi
+
+if [ -f "${TRANSCODE_INSTANCED_PATH}/${_id}/build.d/select_audio_stream.sh" ]; then
+    source "${TRANSCODE_INSTANCED_PATH}/${_id}/build.d/select_audio_stream.sh"
+fi
+
+if ! typeset -f select_audio_stream > /dev/null; then
+    function select_audio_stream() {
+        echo "0:a:0?"
+    }
+fi
+
+function _build_input_conf() {
+    local id="$1"; shift
+    local input="$1"; shift
+    local input_conf="${TRANSCODE_INSTANCED_PATH}/${id}/input.conf.template"
+
+    echo -f mpegts > "${input_conf}"
+
+    echo "-i ${input}?buffer_size=$( _get_input_buffer_size "${UDPAUDIO2HLS_INPUT_BITRATE}" )&fifo_size=$( _get_input_fifo_size "${UDPAUDIO2HLS_INPUT_BITRATE}" )" >> "${input_conf}"
+}
+
+function _build_output_automap() {
+    local id="$1"; shift
+    local input="$1"; shift
+    local output_automap="${TRANSCODE_INSTANCED_PATH}/${id}/output.automap"
+
+    if [ -n "${AUTOMAP_PREFERRED_LANGUAGES:-}" ] && [ -f "${output_automap}.template" ]; then
+        AUTOMAP_INPUT="${input}" envsubst '${AUTOMAP_INPUT} ${AUTOMAP_PREFERRED_LANGUAGES}' \
+            < "${output_automap}.template" \
+            > "${output_automap}"
+    else
+        echo "#!/bin/bash" > "${output_automap}"
+        echo "echo -map ${_TRANSCODE_AUDIO_STREAM}" >> "${output_automap}"
+    fi
+
+    chmod +x "${output_automap}"
+}
+
+function _build_output_conf() {
+    local id="$1"; shift
+    local name="$1"; shift
+    local output_conf="${TRANSCODE_INSTANCED_PATH}/${id}/output.conf.template"
+
+    echo "-f hls" > "${output_conf}"
+    echo "-hls_time ${UDPAUDIO2HLS_HLS_TIME:-6}" >> "${output_conf}"
+    echo "-hls_list_size ${UDPAUDIO2HLS_HLS_LIST_SIZE:-10}" >> "${output_conf}"
+    echo "-hls_flags ${UDPAUDIO2HLS_HLS_FLAGS:-delete_segments}" >> "${output_conf}"
+    if [ -n "${UDPAUDIO2HLS_HLS_BASE_URL:-}" ]; then
+        echo "-hls_base_url \"${UDPAUDIO2HLS_HLS_BASE_URL}\"" >> "${output_conf}"
+    fi
+    echo "-hls_segment_filename \"${UDPAUDIO2HLS_HLS_SEGMENT_FILENAME:-segment-%03d.ts}\"" >> "${output_conf}"
+    echo "-use_localtime 1" >> "${output_conf}"
+    echo "-hls_key_info_file \"\${TRANSCODE_CONF_PATH}/keyinfo\"" >> "${output_conf}"
+
+    echo "-c:a ${UDPAUDIO2HLS_AUDIO_CODEC}" >> "${output_conf}"
+    if [ -n "${UDPAUDIO2HLS_AUDIO_BITRATE:-}" ]; then
+        echo "-b:a ${UDPAUDIO2HLS_AUDIO_BITRATE}" >> "${output_conf}"
+    fi
+
+    echo "-metadata \"service_name=${UDPAUDIO2HLS_META_SERVICE_NAME:-${name}}\"" >> "${output_conf}"
+
+    if [ -n "${UDPAUDIO2HLS_META_SERVICE_PROVIDER:-}" ]; then
+        echo "-metadata \"service_provider=${UDPAUDIO2HLS_META_SERVICE_PROVIDER}\"" >> "${output_conf}"
+    fi
+
+    echo "\${HOME}/playlist.m3u8" >> "${output_conf}"
+}
+
+function _build_trancode_conf() {
+    local id="$1"; shift
+    local template_conf="${TRANSCODE_INSTANCED_PATH}/${id}/transcode.conf.template"
+
+    echo "-loglevel ${UDPAUDIO2HLS_LOGLEVEL:-warning}" > "${template_conf}"
+    echo "-nostats" >> "${template_conf}"
+    echo "-ignore_unknown" >> "${template_conf}"
+}
+
+function _get_input_buffer_size() {
+    local bitrate="$1"; shift
+
+    echo $(( ${bitrate} / 8 * 10 ))
+}
+
+function _get_input_fifo_size() {
+    local bitrate="$1"; shift
+
+    echo $(( ${bitrate} / 8 / 188 * 10 ))
+}
+
+function _get_output_buffer_size() {
+    local bitrate="$1"; shift
+    local framerate="$1"; shift
+
+    echo $(( ${bitrate} * 4 / ${framerate} ))
+}
+
+function _get_output_max_bitrate() {
+    local bitrate="$1"; shift
+
+    echo $(( ${bitrate} * 12 / 10 ))
+}
+
+function build() {
+    local id="$1"; shift
+    local input="$1"; shift
+    local name="$1"; shift
+
+    export _TRANSCODE_AUDIO_STREAM="$( select_audio_stream "${id}" "${input}" )"
+
+    _build_trancode_conf "${id}"
+    _build_input_conf "${id}" "${input}"
+    _build_output_conf "${id}" "${name}"
+    _build_output_automap "${id}" "${input}"
+
+    echo "${name}" > "${TRANSCODE_INSTANCED_PATH}/${_id}/service_name"
+}
+
+build "$@"
