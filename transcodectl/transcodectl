@@ -176,6 +176,23 @@ function _initialize() {
     __unlock initialize
 }
 
+function _reinitialize() {
+    local id="$1"; shift
+
+    if docker ps -a | grep -q "transcode-${id}$"; then
+        docker rm --force "transcode-${id}"
+    fi
+
+    _rekey "${id}"
+    _start "${id}"
+}
+
+function _reinitialize_all() {
+    for id in $( ls -A "${TRANSCODE_INSTANCED_PATH}" ); do
+        _reinitialize "${id}"
+    done
+}
+
 function _rekey() {
     local id="$1"; shift
 
@@ -263,6 +280,12 @@ function transcodectl() {
 
         generate-playlist)
             _generate_playlist ;;
+
+        reinitialize)
+            _reinitialize ;;
+
+        reinitialize-all)
+            _reinitialize_all ;;
 
         rekey)
             _rekey "$@" ;;
