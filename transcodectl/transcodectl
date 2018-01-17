@@ -220,7 +220,7 @@ function _start() {
     mkdir -p "${TRANSCODE_INSTANCED_PATH}/${id}"
     mkdir -p "${TRANSCODE_STREAM_PATH}/${id}"
 
-    if docker ps -a | grep -q "transcode-${id}"; then
+    if docker ps -a | grep -q "transcode-${id}$"; then
         docker start "transcode-${id}"
     else
         _initialize "${id}"
