@@ -3,6 +3,17 @@
 set -o errexit
 set -o nounset
 
+function cleanup_key() {
+    local id="$1"; shift
+
+    if [ -f "${TRANSCODE_INSTANCED_PATH}/${id}/keyinfo" ]; then
+        local current="$( tail -n+2 "${TRANSCODE_INSTANCED_PATH}/${id}/keyinfo" | head -n1 )"
+        find "${TRANSCODE_STREAM_PATH}/${id}" -name '*.key' ! -name "${current}" -type f -exec rm -f {} +
+    else
+        find "${TRANSCODE_STREAM_PATH}/${id}" -name '*.key' -type f -exec rm -f {} +
+    fi
+}
+
 function generate_iv() {
     openssl rand -hex 16
 }
@@ -25,4 +36,5 @@ function generate_keyinfo() {
     echo "$( generate_iv )" >> "${TRANSCODE_INSTANCED_PATH}/${id}/keyinfo"
 }
 
+cleanup_key "$@"
 generate_keyinfo "$@"
