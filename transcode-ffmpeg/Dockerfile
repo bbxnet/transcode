@@ -3,10 +3,10 @@ FROM nvidia/cuda:9.0-runtime-ubuntu16.04
 ENV NVIDIA_DRIVER_CAPABILITIES compute,utility,video
 
 ENV FFMPEG_VERSION=3.4 \
-    FFMPEG_RELEASE=3.4.1 \
-    FFMPEG_CHECKSUM=5a77278a63741efa74e26bf197b9bb09ac6381b9757391b922407210f0f991c0 \
+    FFMPEG_RELEASE=3.4.2 \
+    FFMPEG_CHECKSUM=2b92e9578ef8b3e49eeab229e69305f5f4cbc1fdaa22e927fc7fca18acccd740 \
     FFMPEG_SOURCE=/usr/local/src/ffmpeg \
-    FFMPEG_TARBALL=/usr/local/src/ffmpeg-3.4.1.tar.xz \
+    FFMPEG_TARBALL=/usr/local/src/ffmpeg-3.4.2.tar.xz \
     HOME=/srv/stream
 
 LABEL name="bbxnet/transcode-ffmpeg" \
