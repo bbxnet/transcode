@@ -2,11 +2,11 @@ FROM nvidia/cuda:9.0-runtime-ubuntu16.04
 
 ENV NVIDIA_DRIVER_CAPABILITIES compute,utility,video
 
-ENV FFMPEG_VERSION=3.4 \
-    FFMPEG_RELEASE=3.4.2 \
-    FFMPEG_CHECKSUM=2b92e9578ef8b3e49eeab229e69305f5f4cbc1fdaa22e927fc7fca18acccd740 \
+ENV FFMPEG_VERSION=4.0 \
+    FFMPEG_RELEASE=4.0 \
+    FFMPEG_CHECKSUM=ed945daf40b124e77a685893cc025d086f638bc703183460aff49508edb3a43f \
     FFMPEG_SOURCE=/usr/local/src/ffmpeg \
-    FFMPEG_TARBALL=/usr/local/src/ffmpeg-3.4.2.tar.xz \
+    FFMPEG_TARBALL=/usr/local/src/ffmpeg-4.0.tar.xz \
     HOME=/srv/stream
 
 LABEL name="bbxnet/transcode-ffmpeg" \
@@ -58,9 +58,9 @@ RUN apt-get update \
  && apt-get install --yes --no-install-recommends --verbose-versions ${BUILD_DEPS} \
  \
  && cd /usr/local/src \
- && wget http://www.nasm.us/pub/nasm/releasebuilds/2.13.02/nasm-2.13.02.tar.bz2 \
- && tar xjvf nasm-2.13.02.tar.bz2 \
- && cd nasm-2.13.02 \
+ && wget http://www.nasm.us/pub/nasm/releasebuilds/2.13.03/nasm-2.13.03.tar.bz2 \
+ && tar xjvf nasm-2.13.03.tar.bz2 \
+ && cd nasm-2.13.03 \
  && ./autogen.sh \
  && ./configure --prefix=/usr/local --bindir=/usr/local/bin \
  && make --jobs=$( nproc ) \
@@ -91,6 +91,12 @@ RUN apt-get update \
  && make --jobs=$( nproc ) \
  && make --jobs=$( nproc ) install \
  && cd / \
+ \
+ && cd /usr/local/src \
+ && git clone https://git.videolan.org/git/ffmpeg/nv-codec-headers.git \
+ && cd nv-codec-headers \
+ && make --jobs=$( nproc ) \
+ && make --jobs=$( nproc ) install \
  \
  && wget -O "${FFMPEG_TARBALL}" "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_RELEASE}.tar.xz" \
  && echo "${FFMPEG_CHECKSUM} *${FFMPEG_TARBALL}" | sha256sum --check - \

@@ -3,7 +3,7 @@ Transcode FFmpeg
 
 This repository contains Dockerfiles and scripts for transcode FFmpeg based on [`nvidia/cuda`](https://hub.docker.com/r/nvidia/cuda/) container image.
 
-This container image includes FFmpeg version 3.4.1 built with [nvidia](https://developer.nvidia.com/ffmpeg) hardware acceleration support.
+This container image includes FFmpeg version 4.0 built with [nvidia](https://developer.nvidia.com/ffmpeg) hardware acceleration support.
 
 The container image is available on [Docker Hub](https://hub.docker.com/r/bbxnet/transcode-ffmpeg) as `bbxnet/transcode-ffmpeg`.
 
